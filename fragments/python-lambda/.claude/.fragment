@@ -1,0 +1,4 @@
+fragment=python-lambda
+version=unknown
+hash=da03c12b9a9a5eef105cc015a577d06b28fa1b92b20e5e91478a377c620863b7
+tracked_files=.claude/settings.json,.claude/skills/sam-deploy/SKILL.md,CLAUDE.md
