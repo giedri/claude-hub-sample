@@ -35,10 +35,12 @@ esac
 
 # ---------------------------------------------------------------------------
 # Redirect all output to log (append). Truncate if over 100KB to avoid bloat.
+# Save stderr on fd 3 so we can print a user-visible summary at the end.
 # ---------------------------------------------------------------------------
 if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)" -gt 102400 ]; then
     tail -c 51200 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null && mv "$LOG_FILE.tmp" "$LOG_FILE" 2>/dev/null
 fi
+exec 3>&2
 exec >> "$LOG_FILE" 2>&1
 
 log() {
@@ -265,7 +267,8 @@ sync_skills() {
     find "$SKILLS_DIR" -maxdepth 1 -name 'hub-*' -type f -delete 2>/dev/null || true
     log "Cleared old hub-* skills"
 
-    local count=0
+    ORG_SKILL_COUNT=0
+    TEAM_SKILL_COUNT=0
 
     # Copy org skills (skills are directories containing SKILL.md)
     local org_skills_dir="$REPO_DIR/org/skills"
@@ -275,24 +278,23 @@ sync_skills() {
             local basename
             basename=$(basename "$skill_entry")
             cp -r "$skill_entry" "$SKILLS_DIR/hub-${basename}"
-            count=$((count + 1))
+            ORG_SKILL_COUNT=$((ORG_SKILL_COUNT + 1))
         done
-        log "Copied $count org skill(s)"
+        log "Copied $ORG_SKILL_COUNT org skill(s)"
     fi
 
     # Copy team skills (may override org skills with same name)
     if [ -n "$TEAM" ]; then
         local team_skills_dir="$REPO_DIR/teams/$TEAM/skills"
-        local team_count=0
         if [ -d "$team_skills_dir" ]; then
             for skill_entry in "$team_skills_dir"/*; do
                 [ -d "$skill_entry" ] || continue
                 local basename
                 basename=$(basename "$skill_entry")
                 cp -r "$skill_entry" "$SKILLS_DIR/hub-${basename}"
-                team_count=$((team_count + 1))
+                TEAM_SKILL_COUNT=$((TEAM_SKILL_COUNT + 1))
             done
-            log "Copied $team_count team skill(s) for '$TEAM'"
+            log "Copied $TEAM_SKILL_COUNT team skill(s) for '$TEAM'"
         fi
     fi
 }
@@ -685,8 +687,17 @@ main() {
         sync_skills
         sync_mcp_servers || true
         update_last_sync
+
+        # Print user-visible summary to stderr (fd 3)
+        local summary="claude-hub: synced"
+        if [ -n "$TEAM" ]; then
+            summary="$summary ($TEAM"
+        fi
+        summary="$summary, ${ORG_SKILL_COUNT:-0} org + ${TEAM_SKILL_COUNT:-0} team skills)"
+        echo "$summary" >&3 2>/dev/null || true
     else
         log "ERROR: No repo available. Skipping build."
+        echo "claude-hub: sync failed (no repo). See ~/.claude/claude-hub/sync.log" >&3 2>/dev/null || true
     fi
 
     log "=== Sync complete ==="
