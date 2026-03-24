@@ -1,4 +1,4 @@
-# Organization CLAUDE.md
+# Organization (ACMEß) CLAUDE.md
 
 <!-- This file is synced to every developer's ~/.claude/CLAUDE.md on session start. -->
 <!-- Detailed standards are in org/skills/ -- this file provides the high-level rules and references. -->
