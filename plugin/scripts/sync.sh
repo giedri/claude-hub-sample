@@ -694,6 +694,7 @@ main() {
             summary="$summary ($TEAM"
         fi
         summary="$summary, ${ORG_SKILL_COUNT:-0} org + ${TEAM_SKILL_COUNT:-0} team skills)"
+        log "$summary"
         echo "$summary" >&3 2>/dev/null || true
     else
         log "ERROR: No repo available. Skipping build."
