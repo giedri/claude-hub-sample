@@ -103,14 +103,31 @@ The sync has a 5-minute cache TTL, never blocks a session, and falls back to cac
 # 1. Clone this repo
 git clone git@github.com:acme-org/claude-hub.git ~/.claude-hub
 
-# 2. Install the plugin
-claude plugin add ~/.claude-hub/plugin
-
-# 3. Set your team
+# 2. Create config directory, set repo URL and team
+mkdir -p ~/.claude/claude-hub
+echo "https://github.com/acme-org/claude-hub.git" > ~/.claude/claude-hub/repo_url
 echo "frontend" > ~/.claude/claude-hub/team   # or "backend"
 
-# 4. Start Claude Code -- sync happens automatically
+# 3. Add the SessionStart hook to ~/.claude/settings.json
+#    Add this inside the "hooks" object (create the file if needed):
+#
+#    "SessionStart": [{
+#      "matcher": "*",
+#      "hooks": [{
+#        "type": "command",
+#        "command": "bash ~/.claude-hub/plugin/scripts/sync.sh",
+#        "timeout": 15
+#      }]
+#    }]
+
+# 4. Clone the repo and run initial sync
+git clone --depth=1 "$(cat ~/.claude/claude-hub/repo_url)" ~/.claude/claude-hub/repo
+bash ~/.claude-hub/plugin/scripts/sync.sh
+
+# 5. Start Claude Code -- sync runs automatically on each session
 ```
+
+**macOS:** Install `brew install coreutils` for the `timeout` command used by the sync script, or perform step 4 manually (the sync falls back to cached files without it).
 
 ## Adding a new team
 

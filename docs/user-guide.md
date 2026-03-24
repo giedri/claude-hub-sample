@@ -31,18 +31,39 @@ If your org uses the manual (plugin-only) setup:
    git clone git@github.com:your-org/claude-hub.git ~/.claude-hub
    ```
 
-2. Install the Claude Code plugin:
+2. Create the config directory and set your team:
    ```bash
-   claude plugin add ~/.claude-hub/plugin
-   ```
-
-3. Set your team:
-   ```bash
+   mkdir -p ~/.claude/claude-hub
+   echo "https://github.com/your-org/claude-hub.git" > ~/.claude/claude-hub/repo_url
    echo "your-team-name" > ~/.claude/claude-hub/team
    ```
    Ask your team lead which team name to use.
 
-4. Start a new Claude Code session. The sync runs automatically.
+3. Add the SessionStart hook to `~/.claude/settings.json`. Add this inside the `"hooks"` object (create the file and object if they don't exist):
+   ```json
+   "SessionStart": [
+     {
+       "matcher": "*",
+       "hooks": [
+         {
+           "type": "command",
+           "command": "bash ~/.claude-hub/plugin/scripts/sync.sh",
+           "timeout": 15
+         }
+       ]
+     }
+   ]
+   ```
+
+4. Clone the repo and run the initial sync:
+   ```bash
+   git clone --depth=1 "$(cat ~/.claude/claude-hub/repo_url)" ~/.claude/claude-hub/repo
+   bash ~/.claude-hub/plugin/scripts/sync.sh
+   ```
+
+5. Start a new Claude Code session. The sync runs automatically from now on.
+
+**macOS users:** If you see `timeout: command not found` in `~/.claude/claude-hub/sync.log`, install GNU coreutils: `brew install coreutils`. The sync still works without it (falls back to cached files), but installs and fetches won't have timeout protection.
 
 ### Verify it works
 
@@ -199,11 +220,11 @@ This context helps Claude Code give more accurate, project-aware responses. The 
 ## Troubleshooting
 
 **Claude Code doesn't seem to know our standards**
-Check that the plugin is installed:
+Check that the SessionStart hook is configured in `~/.claude/settings.json`:
 ```bash
-claude plugin list
+cat ~/.claude/settings.json | python3 -c "import sys,json; h=json.load(sys.stdin).get('hooks',{}); print('SessionStart hook:', 'found' if 'SessionStart' in h else 'MISSING')"
 ```
-If `claude-hub` is missing: `claude plugin add ~/.claude-hub/plugin`
+If missing, follow the setup steps above to add the hook.
 
 **My team's conventions aren't showing up**
 Check your team file:

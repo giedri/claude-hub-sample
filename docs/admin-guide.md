@@ -132,14 +132,57 @@ Share these steps with developers or include in onboarding docs. The [User Guide
 # 1. Clone the hub repo
 git clone git@github.com:your-org/claude-hub.git ~/.claude-hub
 
-# 2. Install the plugin
-claude plugin add ~/.claude-hub/plugin
-
-# 3. Set team
+# 2. Create the config directory and set repo URL + team
+mkdir -p ~/.claude/claude-hub
+echo "https://github.com/your-org/claude-hub.git" > ~/.claude/claude-hub/repo_url
 echo "frontend" > ~/.claude/claude-hub/team
 
-# 4. Start a Claude Code session -- sync happens automatically
+# 3. Add the SessionStart hook to ~/.claude/settings.json
+#    (see "Installing the SessionStart hook" below)
+
+# 4. Clone the repo for initial sync (the sync script handles updates after this)
+git clone --depth=1 "$(cat ~/.claude/claude-hub/repo_url)" ~/.claude/claude-hub/repo
+
+# 5. Run the sync script manually to populate CLAUDE.md and skills
+bash ~/.claude-hub/plugin/scripts/sync.sh
+
+# 6. Start a new Claude Code session -- sync runs automatically from now on
 ```
+
+#### Installing the SessionStart hook
+
+Add the following to the `hooks` object in `~/.claude/settings.json` (create the file if it doesn't exist):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude-hub/plugin/scripts/sync.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If the file already has a `hooks` key, add the `SessionStart` entry alongside existing hooks.
+
+#### macOS note
+
+The sync script uses `timeout` (from GNU coreutils) for git operations. macOS does not include this by default. Either install it:
+
+```bash
+brew install coreutils
+```
+
+Or perform the initial clone manually (step 4 above) and accept that git fetch warnings will appear in `sync.log` when offline. The sync script handles this gracefully — it falls back to cached files and never blocks a session.
 
 In this mode, org and team content are concatenated into `~/.claude/CLAUDE.md` on every session start. The sync script detects that no managed policy file exists and includes org content automatically.
 
@@ -569,10 +612,14 @@ The sync script needs python3 to merge MCP server configs. Check `sync.log` for 
 Team changes take effect on the next session start. Close and reopen Claude Code.
 
 **Plugin not triggering**
+Check that the `SessionStart` hook is configured in `~/.claude/settings.json`:
 ```bash
-claude plugin list    # Should show claude-hub
+cat ~/.claude/settings.json | python3 -c "import sys,json; h=json.load(sys.stdin).get('hooks',{}); print('SessionStart hook:', 'found' if 'SessionStart' in h else 'MISSING')"
 ```
-If missing: `claude plugin add ~/.claude-hub/plugin`
+If missing, add the hook as described in [Installing the SessionStart hook](#installing-the-sessionstart-hook).
+
+**`timeout: command not found` in sync.log**
+The sync script uses GNU `timeout` which is not included on macOS. Install it with `brew install coreutils`, or perform the initial repo clone manually into `~/.claude/claude-hub/repo` — the sync script falls back to cached files when `timeout` is unavailable.
 
 ### Verification checklist
 
@@ -597,8 +644,10 @@ After deploying via MDM, verify on a test machine:
 
 After plugin-only deployment, verify on a test machine:
 
-- [ ] `claude plugin list` shows `claude-hub`
+- [ ] `~/.claude/settings.json` has a `SessionStart` hook pointing to `sync.sh`
+- [ ] `cat ~/.claude/claude-hub/repo_url` shows the hub repo URL
 - [ ] `cat ~/.claude/claude-hub/team` shows the expected team
+- [ ] `~/.claude/claude-hub/repo/.git` exists (repo is cloned)
 - [ ] Start a new Claude Code session (or run `sync.sh` manually)
 - [ ] `~/.claude/CLAUDE.md` has both org and team content
 - [ ] `ls ~/.claude/skills/` shows `hub-*` skills
