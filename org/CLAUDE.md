@@ -1,11 +1,11 @@
-# Organization (ACMEß) CLAUDE.md
+# Organization CLAUDE.md
 
 <!-- This file is synced to every developer's ~/.claude/CLAUDE.md on session start. -->
 <!-- Detailed standards are in org/skills/ -- this file provides the high-level rules and references. -->
 
 ## Tech Stack
 
-- **Language**: Python 3.12+
+- **Language**: Python 3.13+
 - **Infrastructure as Code**: AWS SAM (`template.yaml`)
 - **Runtime**: AWS Lambda
 - **API**: Amazon API Gateway (HTTP API v2 preferred, REST API v1 when features require it)
