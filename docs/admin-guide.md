@@ -10,7 +10,7 @@ Setup, deployment, and configuration for platform engineers managing claude-hub.
 
 ## Initial setup
 
-The repo has three parts. `plugin/` is the sync engine -- use it as-is. `org/` and `teams/` hold your actual standards and conventions. `examples/` has reference material you can copy if useful. See the [README](../README.md#repository-structure) for the full layout.
+The repo has three parts. `plugin/` is a Claude Code plugin containing the sync script and a SessionStart hook -- use it as-is. `org/` and `teams/` hold your actual standards and conventions. `examples/` has reference material you can copy if useful. See the [README](../README.md#repository-structure) for the full layout.
 
 ### 1. Fork and customize
 
@@ -80,7 +80,7 @@ Uses your existing MDM solution to deploy org-wide standards to Claude Code's [m
 
 Users cannot exclude or override managed policy files, so security policies, compliance requirements, and org-wide MCP servers stay active regardless. The sync script detects the managed policy and writes only team content to `~/.claude/CLAUDE.md` and team MCP servers to `~/.claude/settings.json`.
 
-`examples/mdm/` has deployment scripts for each platform. Each script clones the claude-hub repo, copies `org/CLAUDE.md` and `org/settings.json` to the managed policy path (requires admin/root), configures the SessionStart hook for the user, and sets the team based on group membership.
+`examples/mdm/` has deployment scripts for each platform. Each script clones the claude-hub repo, copies `org/CLAUDE.md` and `org/settings.json` to the managed policy path (requires admin/root), installs the `plugin/` directory as a Claude Code plugin (which provides the SessionStart hook), and sets the team based on group membership.
 
 #### macOS (Jamf Pro)
 
@@ -126,72 +126,26 @@ For organizations without MDM or those who prefer a simpler setup. The sync scri
 
 Share these steps with developers or include in onboarding docs. The [User Guide](user-guide.md) has a developer-friendly version.
 
-There are two clones involved. `~/.claude-hub` holds the sync script itself. `~/.claude/claude-hub/repo` is a separate shallow clone that the sync script pulls content from on each session start.
-
-**Step 1.** Clone the hub repo (this gives developers the sync script):
-
 ```bash
-git clone git@github.com:your-org/claude-hub.git ~/.claude-hub
+git clone --depth=1 https://github.com/your-org/claude-hub.git ~/.claude/claude-hub/repo
+bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team frontend
 ```
 
-**Step 2.** Create the config directory and set repo URL + team:
+The setup script writes the team and repo URL config, adds the SessionStart hook to `~/.claude/settings.json`, and runs the first sync. It's safe to run again if something changes. Start a new Claude Code session afterward.
 
-```bash
-mkdir -p ~/.claude/claude-hub
-echo "https://github.com/your-org/claude-hub.git" > ~/.claude/claude-hub/repo_url
-echo "frontend" > ~/.claude/claude-hub/team
-```
+Unlike MDM deployment (which installs `plugin/` as a Claude Code plugin), manual setup adds the hook directly to `~/.claude/settings.json`. The sync script is the same either way — only the hook delivery differs.
 
-**Step 3.** Add the SessionStart hook to `~/.claude/settings.json` (create the file if it doesn't exist):
+If you need to do this manually (no python3, or you want more control), the setup script just does three things:
 
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude-hub/plugin/scripts/sync.sh",
-            "timeout": 15
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-If the file already has a `hooks` key, add the `SessionStart` entry alongside existing hooks.
-
-**Step 4.** Clone the content repo (the sync script handles updates after this):
-
-```bash
-git clone --depth=1 "$(cat ~/.claude/claude-hub/repo_url)" ~/.claude/claude-hub/repo
-```
-
-**Step 5.** Run the sync script manually to populate CLAUDE.md and skills:
-
-```bash
-bash ~/.claude-hub/plugin/scripts/sync.sh
-```
-
-**Step 6.** Start a new Claude Code session -- sync runs automatically from now on.
+1. Writes `~/.claude/claude-hub/team` and `repo_url`
+2. Adds a SessionStart hook to `~/.claude/settings.json` that runs `bash ~/.claude/claude-hub/repo/plugin/scripts/sync.sh`
+3. Runs that sync script once
 
 #### macOS note
 
-The sync script uses `timeout` (from GNU coreutils) for git operations. macOS does not include this by default. Either install it:
+The sync script uses `timeout` (from GNU coreutils) for git fetch timeouts. macOS doesn't include this by default. Install it with `brew install coreutils`, or accept that fetch failures when offline will be logged without timeout protection. The sync script handles this gracefully and never blocks a session.
 
-```bash
-brew install coreutils
-```
-
-Or perform the initial clone manually (step 4 above) and accept that git fetch warnings will appear in `sync.log` when offline. The sync script handles this gracefully — it falls back to cached files and never blocks a session.
-
-In this mode, org and team content are concatenated into `~/.claude/CLAUDE.md` on every session start. The sync script detects that no managed policy file exists and includes org content automatically.
-
-The trade-off: users can override `~/.claude/CLAUDE.md` manually, though the sync script restores it on the next session. If you need standards that can't be bypassed, use the MDM approach.
+The trade-off vs MDM: users can override `~/.claude/CLAUDE.md` manually, though the sync script restores it on the next session. If you need standards that can't be bypassed, use MDM.
 
 ### Git authentication
 
@@ -271,12 +225,7 @@ Team-level skills target specific workflows. Examples:
 | Frontend | `component-review` | Reviews components for accessibility, performance, TypeScript |
 | Frontend | `e2e-test` | Generates E2E tests |
 
-Fragment-level skills ship with project types (not synced via hub, live in the project's `.claude/skills/`):
-
-| Fragment | Skill | What it does |
-|---|---|---|
-| `terraform-service` | `deploy` | Validate, plan, and apply the Terraform configuration |
-| `terraform-service` | `api-test` | Run or generate integration tests against the deployed API |
+Fragment-level skills ship with project types (not synced via hub, live in the project's `.claude/skills/`). For example, a Terraform fragment might include a `deploy` skill that validates, plans, and applies the configuration. See the `python-lambda` example in `examples/fragments/` for a working fragment with skills.
 
 Copy example skills and customize:
 
@@ -496,14 +445,7 @@ The `CLAUDE.md` uses markers to separate managed content from project-owned cont
 
 Everything above the end marker gets replaced on updates. Everything below it belongs to the project and is never touched.
 
-### Available fragment types
-
-| Fragment | Description |
-|---|---|
-| `terraform-service` | Terraform-managed service with deploy skill, pytest permissions |
-| `react-app` | React application defaults |
-| `node-api` | Node.js API service config |
-| `python-api` | Python API service config |
+`examples/fragments/` has a sample fragment (`python-lambda`) you can use as a starting point. Copy it and adapt to your project types.
 
 ### Creating custom fragments
 
@@ -551,23 +493,7 @@ Everything above the end marker gets replaced on updates. Everything below it be
 
 ### Fragment versioning
 
-Fragments include version tracking so projects can detect when upstream changes are available. See the [README](../README.md#how-drift-detection-works) for the full drift detection flow.
-
-Each fragment has a `.claude/.fragment` marker containing a SHA-256 hash of its managed content. Generate these by running:
-
-```bash
-bash examples/scripts/generate-markers.sh fragments
-```
-
-Run this in CI after any fragment change, or manually before committing. It computes the hash of all tracked files and writes `.claude/.fragment` in each fragment directory.
-
-Drift detection happens automatically during session sync. When the hash in a project's marker doesn't match the current source fragment, the sync script appends a notice to the developer's `~/.claude/CLAUDE.md`. To let developers act on these notices, copy the fragment-update skill:
-
-```bash
-cp -r examples/org/skills/fragment-update org/skills/
-```
-
-Developers run `/hub-fragment-update` to review diffs and selectively apply changes. Updates replace only the content between markers in `CLAUDE.md` and can replace `.claude/` files directly.
+See the [README](../README.md#how-drift-detection-works) for the full drift detection flow. The marker generation and fragment-update skill setup are covered in [Setting up fragments](#setting-up-fragments) above.
 
 The `.fragment` marker format:
 
@@ -582,7 +508,7 @@ tracked_files=.claude/settings.json,.claude/skills/deploy/SKILL.md,CLAUDE.md
 
 ### Updating org configuration
 
-Edit files in `org/` or `teams/`, commit, and push. Developers pick up changes on their next session start. If a developer already has a session open, the cached config refreshes within 5 minutes (the TTL window).
+Edit files in `org/` or `teams/`, commit, and push. Developers pick up changes on their next session start. The sync has a 5-minute TTL, so if a developer starts two sessions within 5 minutes, the second one skips the fetch. Open sessions don't re-sync — the update arrives when the next session starts.
 
 For MDM deployments, pushing to `org/CLAUDE.md` or `org/settings.json` also requires re-running the MDM deployment to update the managed policy files. See [Updating org standards via MDM](#updating-org-standards-via-mdm).
 
@@ -600,7 +526,7 @@ Check the developer's SSH key, PAT, or GitHub App token. The sync script needs r
 **CLAUDE.md is empty or stale**
 Run the sync script manually to see what's happening:
 ```bash
-bash ~/.claude-hub/plugin/scripts/sync.sh
+bash ~/.claude/claude-hub/repo/plugin/scripts/sync.sh
 cat ~/.claude/claude-hub/sync.log
 ```
 
@@ -617,14 +543,19 @@ The sync script needs python3 to merge MCP server configs. Check `sync.log` for 
 Team changes take effect on the next session start. Close and reopen Claude Code.
 
 **Sync not triggering**
-Check that the `SessionStart` hook is configured in `~/.claude/settings.json`:
+With MDM deployment, verify the plugin is registered:
+```bash
+cat ~/.claude/plugins/installed_plugins.json   # Should list claude-hub
+ls ~/.claude/plugins/local/claude-hub/hooks/   # Should contain hooks.json
+```
+With manual setup, check the hook in `~/.claude/settings.json`:
 ```bash
 cat ~/.claude/settings.json | python3 -c "import sys,json; h=json.load(sys.stdin).get('hooks',{}); print('SessionStart hook:', 'found' if 'SessionStart' in h else 'MISSING')"
 ```
-If missing, add the hook as described in [Installing the SessionStart hook](#installing-the-sessionstart-hook).
+If missing, re-run `bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team <team-name>` or add the hook manually.
 
 **`timeout: command not found` in sync.log**
-The sync script uses GNU `timeout` which is not included on macOS. Install it with `brew install coreutils`, or perform the initial repo clone manually into `~/.claude/claude-hub/repo` — the sync script falls back to cached files when `timeout` is unavailable.
+macOS doesn't include GNU `timeout`. Install it with `brew install coreutils`. The sync script still works without it — git fetches just won't have timeout protection.
 
 ### Verification checklist
 
@@ -638,7 +569,8 @@ After deploying via MDM, verify on a test machine:
   - Windows: `C:\Program Files\ClaudeCode\CLAUDE.md` and `settings.json`
 - [ ] Managed policy CLAUDE.md contains your org's content
 - [ ] Managed policy settings.json contains your org's MCP servers (if configured)
-- [ ] `~/.claude/settings.json` has a `SessionStart` hook pointing to `sync.sh`
+- [ ] Plugin is registered: `cat ~/.claude/plugins/installed_plugins.json` lists `claude-hub`
+- [ ] Plugin files exist: `ls ~/.claude/plugins/local/claude-hub/hooks/hooks.json`
 - [ ] `cat ~/.claude/claude-hub/team` shows the expected team
 - [ ] Start a new Claude Code session (or run `sync.sh` manually)
 - [ ] `~/.claude/CLAUDE.md` has team content but not org content (org is in managed policy)

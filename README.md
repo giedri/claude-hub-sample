@@ -11,7 +11,7 @@ A Claude Code plugin backed by a Git repository that keeps every developer's CLA
 
 ```
 claude-hub/
-  plugin/          # Sync engine -- install as-is
+  plugin/          # Claude Code plugin (sync script + SessionStart hook) -- install as-is
   org/             # Your org's standards, MCP servers, and skills -- customize these
   teams/           # Your teams' conventions, MCP servers, and skills -- one directory per team
   examples/        # Samples and optional features -- copy what you need
@@ -75,9 +75,7 @@ The sync script writes both org and team content to `~/.claude/CLAUDE.md`. Simpl
     teams/<team>/settings.json──┘
 ```
 
-The sync script auto-detects which mode to use: if a managed policy CLAUDE.md exists on the system, it writes team content only; otherwise it writes org + team combined.
-
-The sync has a 5-minute TTL cache. It exits silently on failure and falls back to cached files when offline.
+The sync script auto-detects which mode to use: if a managed policy CLAUDE.md exists on the system, it writes team content only; otherwise it writes org + team combined. See the [Admin Guide](docs/admin-guide.md#option-b-manual-setup-no-mdm) for setup instructions and [Sync script](#sync-script) below for operational details.
 
 ## What's in the repo
 
@@ -97,6 +95,7 @@ plugin/
     hooks.json                  # SessionStart hook definition
   scripts/
     sync.sh                     # Sync script (runs on every session start)
+    setup.sh                    # Manual setup helper (no-MDM installs)
 ```
 
 ### 2. Your organization's content -- `org/` and `teams/`

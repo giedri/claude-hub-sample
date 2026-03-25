@@ -10,13 +10,13 @@ In practice, Claude Code already knows your org's coding standards and your team
 
 ### How standards reach your machine
 
-Claude Code reads instructions from multiple layers, in order:
+Claude Code reads instructions from three layers, each refining or overriding the previous:
 
-1. Organization standards (coding standards, security policies, compliance requirements). How they reach your machine depends on your platform team's setup. With MDM, they're installed to a system path that Claude Code reads automatically -- always active, cannot be excluded. Without MDM, the sync script includes them in `~/.claude/CLAUDE.md`.
-2. Team conventions -- your team's specific guidance, written to `~/.claude/CLAUDE.md` by the sync script.
-3. Project-level -- any `CLAUDE.md` in the repository you're working in. Maintained by your team, specific to that project.
+1. **Organization standards** -- coding standards, security policies, compliance requirements. Apply to everyone.
+2. **Team conventions** -- your team's tech stack, branching model, testing standards. Layer on top of org.
+3. **Project-level** -- any `CLAUDE.md` in the repository you're working in. Specific to that project.
 
-You don't need to know which deployment method your org uses. It's handled for you.
+How these get onto your machine is handled by your platform team. You don't need to configure anything.
 
 ## Getting started
 
@@ -26,44 +26,15 @@ Your platform team may have already installed Claude Hub on your machine via MDM
 
 If your org uses the manual setup (no MDM):
 
-1. Clone the hub repository (this gives you the sync script):
+1. Clone the repo and run the setup script (ask your team lead which team name to use):
    ```bash
-   git clone git@github.com:your-org/claude-hub.git ~/.claude-hub
+   git clone --depth=1 git@github.com:your-org/claude-hub.git ~/.claude/claude-hub/repo
+   bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team your-team-name
    ```
 
-2. Create the config directory and set your team:
-   ```bash
-   mkdir -p ~/.claude/claude-hub
-   echo "https://github.com/your-org/claude-hub.git" > ~/.claude/claude-hub/repo_url
-   echo "your-team-name" > ~/.claude/claude-hub/team
-   ```
-   Ask your team lead which team name to use.
+2. Start a new Claude Code session. The sync runs automatically from now on.
 
-3. Add the SessionStart hook to `~/.claude/settings.json`. Add this inside the `"hooks"` object (create the file and object if they don't exist):
-   ```json
-   "SessionStart": [
-     {
-       "matcher": "*",
-       "hooks": [
-         {
-           "type": "command",
-           "command": "bash ~/.claude-hub/plugin/scripts/sync.sh",
-           "timeout": 15
-         }
-       ]
-     }
-   ]
-   ```
-
-4. Clone the content repo and run the initial sync (this is a separate clone that the sync script pulls updates into):
-   ```bash
-   git clone --depth=1 "$(cat ~/.claude/claude-hub/repo_url)" ~/.claude/claude-hub/repo
-   bash ~/.claude-hub/plugin/scripts/sync.sh
-   ```
-
-5. Start a new Claude Code session. The sync runs automatically from now on.
-
-**macOS users:** If you see `timeout: command not found` in `~/.claude/claude-hub/sync.log`, install GNU coreutils: `brew install coreutils`. The sync still works without it (falls back to cached files), but installs and fetches won't have timeout protection.
+**macOS users:** If you see `timeout: command not found` in `~/.claude/claude-hub/sync.log`, install GNU coreutils: `brew install coreutils`. The sync still works without it (falls back to cached files), but fetches won't have timeout protection.
 
 ### Verify it works
 
@@ -77,8 +48,6 @@ ls ~/.claude/skills/        # Should show hub-* skills
 ### Organization instructions
 
 Claude Code follows your org's standards for code style, naming, code review, security, CI/CD, and deployment -- whatever your platform team has configured.
-
-These come from `org/CLAUDE.md` in the central repo. With MDM, they're loaded from a system path and cannot be excluded. Without MDM, they're part of `~/.claude/CLAUDE.md`.
 
 ### Team instructions
 
@@ -136,13 +105,15 @@ Start a new Claude Code session to pick up the new team's configuration.
 
 ### About ~/.claude/CLAUDE.md
 
-The hub writes to `~/.claude/CLAUDE.md` for team conventions (and org standards when not using MDM). Don't edit this file manually -- it gets overwritten on each sync.
+The hub writes to `~/.claude/CLAUDE.md` with your org and team configuration. Don't edit this file manually -- it gets overwritten on each sync.
 
 You can still use project-level `CLAUDE.md` files in your repositories. Those are separate and unaffected by hub sync.
 
 ## Working with project CLAUDE.md
 
-Projects created from scaffolding templates (Backstage, Cookiecutter, etc.) come with a `CLAUDE.md` and a `.claude/` directory pre-configured. This gives Claude Code project-specific context from the first session.
+Skip this section if your project wasn't created from a scaffolding template (Backstage, Cookiecutter, etc.).
+
+Scaffolded projects come with a `CLAUDE.md` and a `.claude/` directory pre-configured. This gives Claude Code project-specific context from the first session.
 
 ### What's in a scaffolded project
 
@@ -167,22 +138,9 @@ The `CLAUDE.md` has two zones separated by markers:
 Add your content here...
 ```
 
-### What the markers mean
-
-Everything between the markers is managed by your platform team: build commands, testing patterns, framework pitfalls. Don't edit this section; it gets replaced when updates come in.
-
-Everything below the end marker is yours. Architecture notes, project conventions, lessons learned, deployment notes -- write whatever helps. This section is never touched by updates.
-
 ### Using project skills
 
-Projects include skills tailored to that project type. Run them like any other skill:
-
-```
-/deploy                   Validate, plan, and apply the Terraform configuration
-/api-test                 Run or generate integration tests against the deployed API
-```
-
-These skills know about your project's structure and toolchain. For example, `/deploy` validates the configuration, runs tests, plans changes, and applies them -- all in sequence.
+Scaffolded projects include skills tailored to that project type (listed in the table above). These skills know about the project's structure and toolchain -- for example, a deploy skill might validate, test, plan, and apply in sequence.
 
 ### Fragment updates
 
@@ -203,11 +161,15 @@ After scaffolding, fill in the project notes section of `CLAUDE.md`. Write down 
 ## Troubleshooting
 
 **Claude Code doesn't seem to know our standards**
-Check that the SessionStart hook is configured in `~/.claude/settings.json`:
+Check that the sync is set up. Depending on how your org deployed Claude Hub, the hook lives in one of two places:
 ```bash
+# MDM installs -- hook comes from the plugin:
+ls ~/.claude/plugins/local/claude-hub/hooks/hooks.json
+
+# Manual installs -- hook is in settings.json:
 cat ~/.claude/settings.json | python3 -c "import sys,json; h=json.load(sys.stdin).get('hooks',{}); print('SessionStart hook:', 'found' if 'SessionStart' in h else 'MISSING')"
 ```
-If missing, follow the setup steps above to add the hook.
+If neither exists, follow the setup steps above or ask your platform team.
 
 **My team's conventions aren't showing up**
 Check your team file:
@@ -240,20 +202,12 @@ Yes. Create skill directories under `~/.claude/skills/` for personal skills, or 
 Hub skills (`/hub-*`) come from the central claude-hub repo and are synced to your machine. They cover org-wide and team-wide concerns (code review, security, standards). Project skills (no prefix) live in the project's `.claude/skills/` directory and are specific to that project type (deploy, test, inspect). Both are available as slash commands.
 
 **My project was created from a template but has no `.claude/` directory**
-The template may predate the fragment system. Ask your platform team for the correct fragment type, then manually copy it:
+The template may predate the fragment system. Ask your platform team for the correct fragment name, then copy it from the hub repo. For example, if the fragment is `python-lambda`:
 ```bash
-cp -r ~/.claude/claude-hub/repo/fragments/terraform-service/.claude .
-cp ~/.claude/claude-hub/repo/fragments/terraform-service/CLAUDE.md .
+cp -r ~/.claude/claude-hub/repo/examples/fragments/python-lambda/.claude .
+cp ~/.claude/claude-hub/repo/examples/fragments/python-lambda/CLAUDE.md .
 ```
 
 **Will hub sync overwrite my personal settings?**
 The hub manages `~/.claude/CLAUDE.md`, `~/.claude/skills/hub-*`, and the `mcpServers` entries it placed in `~/.claude/settings.json`. It tracks which MCP servers it added and only touches those; your own settings and servers are left alone. Project-level `.claude/` files are never modified by hub sync.
 
-**What if the central repo is unavailable?**
-The sync script uses the last cached version. Your session starts normally -- you just won't get updates that happened while you were disconnected.
-
-**How often does it update?**
-Every session start, with a 5-minute cache to skip redundant work. It won't re-sync mid-session; updates arrive when you start the next one.
-
-**How do I know if my project's toolchain config is outdated?**
-The sync script checks automatically. If a drift notice appears at session start mentioning your project, run `/hub-fragment-update` to see what changed and selectively apply updates.
