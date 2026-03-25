@@ -1,4 +1,0 @@
-fragment=event-processor
-version=unknown
-hash=7b669ca3c2d034838b21f0aefb727b1bf614bf94b9bfaa54472249be9984fb41
-tracked_files=.claude/settings.json,.claude/skills/dlq-inspect/SKILL.md,.claude/skills/sam-deploy/SKILL.md,CLAUDE.md
