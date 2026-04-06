@@ -15,5 +15,17 @@
       "url": "https://mcp.internal.acme.com/artifactory",
       "note": "Artifact registry — search packages, check versions, read metadata"
     }
+  },
+  "extraKnownMarketplaces": {
+    "acme-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "acme-corp/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "code-formatter@acme-plugins": true,
+    "security-scanner@acme-plugins": true
   }
 }

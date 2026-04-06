@@ -110,9 +110,9 @@ fi
 
 ORG_SETTINGS="$REPO_CLONE_DIR/org/settings.json"
 if [ -f "$ORG_SETTINGS" ]; then
-    cp "$ORG_SETTINGS" "$MANAGED_POLICY_DIR/settings.json"
-    chmod 644 "$MANAGED_POLICY_DIR/settings.json"
-    log "Deployed org settings.json to $MANAGED_POLICY_DIR/settings.json (MCP servers, permissions)"
+    cp "$ORG_SETTINGS" "$MANAGED_POLICY_DIR/managed-settings.json"
+    chmod 644 "$MANAGED_POLICY_DIR/managed-settings.json"
+    log "Deployed org settings.json to $MANAGED_POLICY_DIR/managed-settings.json (MCP servers, marketplaces, plugins)"
 else
     log "Warning: org/settings.json not found in repo, skipping managed policy settings"
 fi

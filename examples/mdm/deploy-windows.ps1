@@ -122,8 +122,8 @@ if (Test-Path $OrgClaudeMd) {
 
 $OrgSettings = Join-Path $RepoCloneDir "org\settings.json"
 if (Test-Path $OrgSettings) {
-    Copy-Item -Path $OrgSettings -Destination (Join-Path $ManagedPolicyDir "settings.json") -Force
-    Write-Log "Deployed org settings.json to $ManagedPolicyDir\settings.json (MCP servers, permissions)"
+    Copy-Item -Path $OrgSettings -Destination (Join-Path $ManagedPolicyDir "managed-settings.json") -Force
+    Write-Log "Deployed org settings.json to $ManagedPolicyDir\managed-settings.json (MCP servers, marketplaces, plugins)"
 } else {
     Write-Log "Warning: org/settings.json not found in repo, skipping managed policy settings"
 }

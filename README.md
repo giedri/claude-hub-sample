@@ -1,11 +1,13 @@
 # claude-hub
 
-Centralized Claude Code configuration management for teams and organizations.
+Pre-packaged Claude Code guidance for teams and organizations.
 
-A Claude Code plugin backed by a Git repository that keeps every developer's CLAUDE.md and skills in sync. A SessionStart hook pulls the latest configuration on every session, so standards and guardrails propagate without anyone doing anything.
+Claude Hub distributes org and team CLAUDE.md files, skills, and fragments (project-level guidance) to every developer from a central Git repository. Developers get a working baseline the moment they open Claude Code: org standards, team conventions, reusable skills, and project-type-specific context are all in place without anyone installing or configuring anything by hand.
 
-**[Admin Guide](docs/admin-guide.md)** -- Setup, deployment, and configuration for platform engineers.
-**[User Guide](docs/user-guide.md)** -- Developer onboarding and daily usage.
+This is not a replacement for Claude Code's built-in [plugin marketplace](https://code.claude.com/docs/en/plugins) or auto-update features. It complements them by solving a different problem: getting organization-specific guidance (coding standards, security policies, team conventions, project scaffolding) onto every machine automatically. The marketplace distributes community and third-party plugins; Claude Hub distributes your org's knowledge. If needed, the same mechanism can be extended to host a custom internal marketplace (plugins are just another item in the sync configuration).
+
+**[Admin Guide](docs/admin-guide.md):** Setup, deployment, and configuration for platform engineers.
+**[User Guide](docs/user-guide.md):** Developer onboarding and daily usage.
 
 ## Repository structure
 
@@ -18,27 +20,45 @@ claude-hub/
   docs/            # Guides for admins and developers
 ```
 
+## What gets distributed
+
+Claude Hub delivers three kinds of guidance, each targeting a different level of the [CLAUDE.md hierarchy](https://code.claude.com/docs/en/memory):
+
+| What | Purpose | Example |
+|---|---|---|
+| **Org and team CLAUDE.md** | Instructions Claude Code follows automatically | Coding standards, security policies, team conventions |
+| **Skills** | Reusable slash-command workflows developers invoke on demand | `/hub-code-standards`, `/hub-security-review`, `/hub-deploy` |
+| **Fragments** | Project-level `.claude/` configurations shipped via scaffolding | Pre-approved permissions, project-type skills, toolchain reference |
+| **Plugin marketplaces** | Pre-registered private marketplaces and auto-enabled plugins | Org's internal plugin catalog, approved third-party plugins |
+| **MCP servers** | Connections to external tools distributed centrally | Jira, internal knowledge base, artifact registry |
+
+Fragments are what make this more than a config sync tool. When a developer creates a new project from a Backstage (or similar) template, the project arrives with a complete `.claude/` directory: a project CLAUDE.md with toolchain-specific guidance, pre-approved permissions, and project-type skills, ready to use from the first session.
+
 ## How it works
 
-Claude Hub distributes configuration through two channels that map to Claude Code's [CLAUDE.md hierarchy](https://code.claude.com/docs/en/memory):
+Configuration reaches developers through two channels:
 
 | Layer | Deployed to | Managed by | Modifiable by user |
 |---|---|---|---|
 | Org standards | [System managed policy path](https://code.claude.com/docs/en/third-party-integrations#best-practices-for-organizations) | MDM (or sync script) | No (when using managed policy) |
-| Org MCP servers | System managed policy `settings.json` | MDM (or sync script) | No (when using managed policy) |
+| Org MCP servers | System managed policy `managed-settings.json` | MDM (or sync script) | No (when using managed policy) |
+| Org marketplaces & plugins | System managed policy `managed-settings.json` | MDM (or sync script) | No (when using managed policy) |
+| Marketplace restrictions | System managed policy `managed-settings.json` | MDM | No |
 | Team conventions | `~/.claude/CLAUDE.md` | Sync script | Yes |
 | Team MCP servers | `~/.claude/settings.json` | Sync script | Yes |
+| Team marketplaces & plugins | `~/.claude/settings.json` | Sync script | Yes |
 | Skills | `~/.claude/skills/hub-*` | Sync script | Yes |
 
 ### With MDM (recommended)
 
-MDM deploys `org/CLAUDE.md` to the [system managed policy path](https://code.claude.com/docs/en/third-party-integrations#best-practices-for-organizations) where Claude Code reads it automatically. Users can't modify or exclude it. The sync script handles team content and skills.
+MDM deploys `org/CLAUDE.md` to the [system managed policy path](https://code.claude.com/docs/en/third-party-integrations#best-practices-for-organizations) where Claude Code reads it automatically. Users can't modify or exclude it. The sync script handles team content, skills, and settings merging.
 
 ```
   MDM deploys & keeps current:
     org/CLAUDE.md ──────> /Library/Application Support/ClaudeCode/CLAUDE.md
-    org/settings.json ──> /Library/Application Support/ClaudeCode/settings.json
+    org/settings.json ──> /Library/Application Support/ClaudeCode/managed-settings.json
                           (or /etc/claude-code/ on Linux)
+                          (includes mcpServers, marketplaces, plugins, restrictions)
 
   Sync script runs on every session start:
     teams/<team>/CLAUDE.md ───> ~/.claude/CLAUDE.md
@@ -47,9 +67,9 @@ MDM deploys `org/CLAUDE.md` to the [system managed policy path](https://code.cla
                               ├─> ~/.claude/skills/hub-*
     teams/<team>/skills/ ─────┘
 
-    org/settings.json ────────┐
-                              ├─> ~/.claude/settings.json  (mcpServers merged)
-    teams/<team>/settings.json┘
+    org/settings.json ────────┐  mcpServers,
+                              ├─> ~/.claude/settings.json  extraKnownMarketplaces,
+    teams/<team>/settings.json┘  enabledPlugins (merged)
 ```
 
 This is not a one-time setup. When you update `org/CLAUDE.md` in this repo, re-run the MDM deployment to push the new version. A scheduled MDM policy (daily Jamf policy, Ansible playbook, Intune script) works well. You can also trigger from CI/CD on push to `org/CLAUDE.md`, or re-run manually when changes are infrequent.
@@ -58,7 +78,7 @@ See the [Admin Guide](docs/admin-guide.md#option-a-mdm-deployment-recommended) f
 
 ### Without MDM (manual setup)
 
-The sync script writes both org and team content to `~/.claude/CLAUDE.md`. Simpler to set up, but users can override it.
+The sync script writes both org and team content to the user-level `~/.claude/CLAUDE.md`. Simpler to set up, but users can override it.
 
 ```
   Sync script runs on every session start:
@@ -70,18 +90,18 @@ The sync script writes both org and team content to `~/.claude/CLAUDE.md`. Simpl
                                 ├─> ~/.claude/skills/hub-*
     teams/<team>/skills/ ───────┘
 
-    org/settings.json ──────────┐
-                                ├─> ~/.claude/settings.json  (mcpServers merged)
-    teams/<team>/settings.json──┘
+    org/settings.json ──────────┐  mcpServers,
+                                ├─> ~/.claude/settings.json  extraKnownMarketplaces,
+    teams/<team>/settings.json──┘  enabledPlugins (merged)
 ```
 
-The sync script auto-detects which mode to use: if a managed policy CLAUDE.md exists on the system, it writes team content only; otherwise it writes org + team combined. See the [Admin Guide](docs/admin-guide.md#option-b-manual-setup-no-mdm) for setup instructions and [Sync script](#sync-script) below for operational details.
+The sync script auto-detects which mode to use: if a managed policy org CLAUDE.md exists on the system, it writes team content only; otherwise it writes org + team combined. See the [Admin Guide](docs/admin-guide.md#option-b-manual-setup-no-mdm) for setup instructions and [Sync script](#sync-script) below for operational details.
 
 ## What's in the repo
 
-Three kinds of content. Knowing which is which matters.
+Three parts. Knowing which is which matters.
 
-### 1. Plugin infrastructure -- `plugin/`
+### 1. Plugin infrastructure: `plugin/`
 
 The engine. You shouldn't need to modify it.
 
@@ -98,28 +118,28 @@ plugin/
     setup.sh                    # Manual setup helper (no-MDM installs)
 ```
 
-### 2. Your organization's content -- `org/` and `teams/`
+### 2. Your organization's content: `org/` and `teams/`
 
 This is where your organization's standards and team conventions live.
 
-`org/` has org-wide CLAUDE.md, settings (MCP servers), and skills. Every developer gets this. Start by replacing the starter files with your actual standards. `teams/` has team-specific overlays. Each team gets a directory with its own CLAUDE.md, settings, and skills, layered on top of org content. A `_template/` is provided for creating new teams.
+`org/` has the org CLAUDE.md (`org/CLAUDE.md`), settings (MCP servers, marketplaces), and skills. Every developer gets this. Start by replacing the starter files with your actual standards. `teams/` has team-specific overlays. Each team gets a directory with its own team CLAUDE.md, settings, and skills, layered on top of org content. A `_template/` is provided for creating new teams.
 
 ```
 org/
-  CLAUDE.md                     # Base instructions for ALL developers
+  CLAUDE.md                     # Org CLAUDE.md — base instructions for ALL developers
   settings.json                 # Org-wide MCP servers and permissions
   skills/                       # Org-wide skills (developers run /hub-<name> in Claude Code)
 teams/
   _template/                    # Copy this to create a new team
   frontend/                     # Example: a frontend team
-    CLAUDE.md                   #   Team-specific instructions
+    CLAUDE.md                   #   Team CLAUDE.md — team-specific instructions
     settings.json               #   Team MCP servers (merged with org)
     skills/                     #   Team-specific skills
 ```
 
-### 3. Reference material -- `examples/` and `docs/`
+### 3. Reference material: `examples/` and `docs/`
 
-Samples, optional features, and documentation. Nothing here is required -- copy what you need.
+Samples, optional features, and documentation. Nothing here is required. Copy what you need.
 
 ```
 examples/
@@ -137,11 +157,73 @@ docs/
 
 The sync script (`plugin/scripts/sync.sh`) runs on every Claude Code session start via a SessionStart hook.
 
-Each run pulls the repo into `~/.claude/claude-hub/repo/` and reads the developer's team. From there it builds `~/.claude/CLAUDE.md` (org + team, or team-only when MDM handles org content), copies skills into `~/.claude/skills/` with a `hub-` prefix, and merges MCP server configs into `~/.claude/settings.json`. If the current project has a `.claude/.fragment` marker, it checks for fragment drift too.
+Each run pulls the repo into `~/.claude/claude-hub/repo/` and reads the developer's team. From there it builds the user-level `~/.claude/CLAUDE.md` (from org + team, or team-only when MDM handles org content), copies skills into `~/.claude/skills/` with a `hub-` prefix, and merges settings from `org/settings.json` and `teams/<team>/settings.json` into `~/.claude/settings.json`: MCP servers, plugin marketplace registrations (`extraKnownMarketplaces`), and auto-enabled plugins (`enabledPlugins`). If the current project has a `.claude/.fragment` marker, it checks for fragment drift too.
 
 The script never blocks a session. It exits 0 regardless of what goes wrong: network failure, missing repo, bad config. When a fetch fails (offline, VPN down, expired credentials), it uses whatever was last pulled and logs a warning.
 
 To skip redundant work, it caches the last sync timestamp and repo HEAD hash. If less than 5 minutes have passed and HEAD hasn't changed, it bails out. A file lock prevents concurrent sessions from racing. The log at `~/.claude/claude-hub/sync.log` is truncated at 100KB.
+
+### What lands on a developer's machine
+
+This is the full file layout created by the sync process. MDM-only items are marked; everything else is created by the sync script or setup script.
+
+```
+/Library/Application Support/ClaudeCode/   (macOS; /etc/claude-code/ on Linux)
+  CLAUDE.md                    # [MDM only] Org CLAUDE.md — enforced, users can't override
+  managed-settings.json        # [MDM only] Org managed settings (MCP servers, marketplaces,
+                               #   plugins, strictKnownMarketplaces restrictions)
+                               #   Must be named managed-settings.json, not settings.json.
+
+~/.claude/
+  CLAUDE.md                    # User-level CLAUDE.md — built by sync from org + team,
+                               #   or team-only when MDM handles org content.
+                               #   Includes fragment drift notices if any projects are outdated.
+  settings.json                # User-level settings — sync merges these keys into it:
+                               #   mcpServers (org + team, team wins on conflict)
+                               #   extraKnownMarketplaces (org + team)
+                               #   enabledPlugins (org + team)
+                               #   Other keys (hooks, permissions, etc.) are left untouched.
+  skills/
+    hub-code-standards/        # Org skill — from org/skills/code-standards/
+      SKILL.md
+    hub-security-review/       # Org skill — from org/skills/security-review/
+      SKILL.md
+    hub-api-design/            # Team skill — from teams/<team>/skills/api-design/
+      SKILL.md                 #   (team skills override org skills with the same name)
+    ...                        # Personal skills (no hub- prefix) are unaffected
+
+  claude-hub/                  # Hub working directory
+    repo/                      # Shallow clone of the central claude-hub Git repo
+    team                       # Developer's team assignment (one line, e.g. "frontend")
+    repo_url                   # Git remote URL of the central repo
+    sync.log                   # Sync log (truncated at 100KB)
+    last_sync                  # Timestamp + HEAD hash for TTL cache
+    .lock                      # File lock to prevent concurrent syncs
+    managed_mcp_servers        # Names of MCP servers placed by hub (for cleanup)
+    managed_marketplaces       # Names of marketplaces placed by hub (for cleanup)
+    managed_plugins            # Names of plugins placed by hub (for cleanup)
+    drift/                     # Fragment drift state
+      <hash>.json              # One file per project with outdated fragment
+
+  plugins/                     # [MDM only] Claude Code plugin registration
+    local/claude-hub/          #   Plugin files (hooks/hooks.json, scripts/sync.sh)
+    installed_plugins.json     #   Plugin registry (lists claude-hub)
+```
+
+With manual setup (no MDM), there are no system-level files and no `~/.claude/plugins/` entries. Instead, the SessionStart hook is written directly into `~/.claude/settings.json` under the `hooks` key.
+
+Fragment-based projects (not created by sync, but checked by it) have their own layout at the project root:
+
+```
+<project>/
+  CLAUDE.md                    # Project CLAUDE.md — managed section (between markers)
+                               #   + project-specific notes (below end marker)
+  .claude/
+    .fragment                  # Version marker (fragment name + SHA-256 hash)
+    settings.json              # Project-level settings (pre-approved permissions)
+    skills/
+      deploy/SKILL.md          # Project-type-specific skills (no hub- prefix)
+```
 
 ## Fragment system (optional)
 
@@ -161,7 +243,7 @@ A platform engineer configures a scaffolding template (Backstage, Cookiecutter, 
          .claude/settings.json  ──┐
          .claude/skills/        ──┼──>  fetch:plain step points here
          .claude/.fragment      ──┤
-         CLAUDE.md              ──┘
+         CLAUDE.md              ──┘     (project CLAUDE.md)
 
   2. Developer creates a new project from the template.
      Fragment files end up in the new repo:
@@ -173,12 +255,12 @@ A platform engineer configures a scaffolding template (Backstage, Cookiecutter, 
          settings.json          # From fragment
          skills/deploy/         # From fragment
          .fragment              # Hash marker for drift detection
-       CLAUDE.md                # Managed section + empty project section
+       CLAUDE.md                # Project CLAUDE.md (managed section + empty project section)
        src/                     # From other template steps
        ...
 ```
 
-The `CLAUDE.md` in the new project has two zones separated by markers:
+The project CLAUDE.md in the new repo has two zones separated by markers:
 
 ```markdown
 <!-- claude-hub:fragment:begin — managed centrally, do not edit manually -->
@@ -210,17 +292,17 @@ When the platform team updates a fragment in claude-hub (new toolchain guidance,
      ├── Match    → project is up to date, no action
      └── Mismatch → write drift notice
 
-  4. Drift notice appears in ~/.claude/CLAUDE.md:
+  4. Drift notice appears in user-level ~/.claude/CLAUDE.md:
      "Project at /path/to/my-service uses fragment terraform-service
       which has updates. Use /hub-fragment-update to review and apply."
 
   5. Developer runs /hub-fragment-update (when ready)
      ├── Shows diff of each changed file
-     ├── Replaces only content between markers in CLAUDE.md
+     ├── Replaces only content between markers in project CLAUDE.md
      ├── Updates .claude/ files (settings, skills)
      └── Rewrites .fragment with new hash
 ```
 
-The hash comparison uses file contents (SHA-256), not git commits. Cherry-picks or reverts that produce identical content are correctly detected as matching. Updates are opt-in -- drift detection only reads project files, it never modifies them.
+The hash comparison uses file contents (SHA-256), not git commits. Cherry-picks or reverts that produce identical content are correctly detected as matching. Updates are opt-in. Drift detection only reads project files, never modifies them.
 
 See the [Admin Guide](docs/admin-guide.md#project-fragments) for fragment setup and the [User Guide](docs/user-guide.md#fragment-updates) for usage.
