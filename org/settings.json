@@ -1,6 +1,12 @@
 {
   "mcpServers": {},
+  "extraKnownMarketplaces": {
+    "agent-plugins-for-aws": {
+      "source": "github",
+      "repo": "giedri/agent-plugins"
+    }
+  },
   "enabledPlugins": {
-    "aws-serverless@claude-plugins-official": true
+    "aws-serverless@agent-plugins-for-aws": true
   }
 }
