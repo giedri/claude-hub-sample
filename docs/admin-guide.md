@@ -96,7 +96,7 @@ Uses your existing MDM solution to deploy org-wide standards to Claude Code's [m
 
 Users cannot exclude or override managed policy files, so security policies, compliance requirements, and org-wide MCP servers stay active regardless. The sync script detects the managed policy and writes only team content to the user-level `~/.claude/CLAUDE.md` and team MCP servers to `~/.claude/settings.json`.
 
-`examples/mdm/` has deployment scripts for each platform. Each script clones the claude-hub repo, copies `org/CLAUDE.md` to the managed policy path and `org/settings.json` as `managed-settings.json` alongside it (requires admin/root), installs the `plugin/` directory as a Claude Code plugin (which provides the SessionStart hook), and sets the team based on group membership.
+`examples/mdm/` has deployment and uninstall scripts for each platform. Each deploy script clones the claude-hub repo, copies `org/CLAUDE.md` to the managed policy path and `org/settings.json` as `managed-settings.json` alongside it (requires admin/root), copies `plugin/` files locally (for the sync script), adds a SessionStart hook to `~/.claude/settings.json`, and sets the team based on group membership. The corresponding uninstall script reverses all changes.
 
 #### macOS (Jamf Pro)
 
@@ -107,6 +107,14 @@ sudo bash examples/mdm/deploy-macos.sh
 ```
 
 Writes to `/Library/Application Support/ClaudeCode/CLAUDE.md`. Sets team from Jamf group membership or extension attributes.
+
+To uninstall:
+
+```bash
+sudo bash examples/mdm/uninstall-macos.sh
+```
+
+Removes all hub artifacts: managed policy files, sync hook, skills, generated CLAUDE.md, hub data directory, and hub-managed entries from `settings.json`.
 
 #### Linux (Ansible/Chef/Puppet)
 
@@ -149,7 +157,7 @@ bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team frontend
 
 The setup script writes the team and repo URL config, adds the SessionStart hook to `~/.claude/settings.json`, and runs the first sync. It's safe to run again if something changes. Start a new Claude Code session afterward.
 
-Unlike MDM deployment (which installs `plugin/` as a Claude Code plugin), manual setup adds the hook directly to `~/.claude/settings.json`. The sync script is the same either way; only the hook delivery differs.
+Both MDM and manual setup add the SessionStart hook directly to `~/.claude/settings.json`. The sync script is the same either way; the difference is that MDM also deploys org files to the managed policy path.
 
 If you need to do this manually (no python3, or you want more control), the setup script just does three things:
 
@@ -314,23 +322,41 @@ MCP servers can be remote (HTTP) or local (stdio):
 
 For local stdio servers, make sure the command is installed on developer machines before adding it to the config.
 
-## Plugin marketplaces and internal plugins
+## Plugins and plugin marketplaces
 
-Claude Hub can pre-register your organization's private [plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces) and auto-enable specific plugins for all developers. This adds to Claude Code's built-in marketplace, not replaces it. Developers can still browse and install community plugins as usual; Claude Hub adds your org's internal plugins on top.
+Claude Hub can auto-enable plugins for all developers and pre-register your organization's private [plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces). This adds to Claude Code's built-in marketplace, not replaces it. Developers can still browse and install community plugins as usual; Claude Hub adds your org's choices on top.
 
-### How marketplace distribution works
+### How plugin distribution works
 
-Marketplace and plugin settings go in the same `settings.json` files as MCP servers. The sync script merges them into `~/.claude/settings.json` together with MCP server configs. With MDM, they go to the managed policy path where users can't remove them.
+Plugin and marketplace settings go in the same `settings.json` files as MCP servers. The sync script merges them into `~/.claude/settings.json` together with MCP server configs. When a plugin is removed from the repo, the sync script cleans it up from developer settings on the next session start.
 
 | Setting | Purpose | Scope |
 |---|---|---|
-| `extraKnownMarketplaces` | Registers marketplaces so developers don't need to run `/plugin marketplace add` | Org or team |
-| `enabledPlugins` | Auto-enables specific plugins from registered marketplaces | Org or team |
+| `enabledPlugins` | Auto-enables specific plugins for all developers | Org or team |
+| `extraKnownMarketplaces` | Registers private marketplaces so developers don't need to run `/plugin marketplace add` | Org or team |
 | `strictKnownMarketplaces` | Restricts which marketplaces users can add (managed settings only) | Org (MDM only) |
+
+### Enabling plugins from the official marketplace
+
+The simplest use case: enable an existing plugin from `claude-plugins-official` for all developers. Add `enabledPlugins` to `org/settings.json`:
+
+```json
+{
+  "mcpServers": {},
+  "enabledPlugins": {
+    "aws-serverless@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true
+  }
+}
+```
+
+The format is `plugin-name@marketplace-name`. Browse available plugins with `/plugin search` in Claude Code, or check the [official marketplace](https://github.com/anthropics/claude-plugins-official). Team-level plugins go in `teams/<team>/settings.json` the same way.
+
+To disable a plugin org-wide (prevent it from being auto-enabled), set the value to `false`.
 
 ### Configuring an org-wide private marketplace
 
-Add `extraKnownMarketplaces` and `enabledPlugins` to `org/settings.json`:
+For internal plugins hosted in your own marketplace repo, add `extraKnownMarketplaces` and `enabledPlugins` to `org/settings.json`:
 
 ```json
 {
@@ -733,16 +759,11 @@ The sync script needs python3 to merge settings (MCP servers, marketplaces, plug
 Team changes take effect on the next session start. Close and reopen Claude Code.
 
 **Sync not triggering**
-With MDM deployment, verify the plugin is registered:
-```bash
-cat ~/.claude/plugins/installed_plugins.json   # Should list claude-hub
-ls ~/.claude/plugins/local/claude-hub/hooks/   # Should contain hooks.json
-```
-With manual setup, check the hook in `~/.claude/settings.json`:
+Check the SessionStart hook in `~/.claude/settings.json`:
 ```bash
 cat ~/.claude/settings.json | python3 -c "import sys,json; h=json.load(sys.stdin).get('hooks',{}); print('SessionStart hook:', 'found' if 'SessionStart' in h else 'MISSING')"
 ```
-If missing, re-run `bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team <team-name>` or add the hook manually.
+If missing, re-run the deploy script (MDM) or `bash ~/.claude/claude-hub/repo/plugin/scripts/setup.sh --team <team-name>` (manual).
 
 **`timeout: command not found` in sync.log**
 macOS doesn't include GNU `timeout`. Install it with `brew install coreutils`. The sync script still works without it, but git fetches won't have timeout protection.
@@ -758,9 +779,9 @@ After deploying via MDM, verify on a test machine:
   - Linux: `/etc/claude-code/CLAUDE.md` and `managed-settings.json`
   - Windows: `C:\Program Files\ClaudeCode\CLAUDE.md` and `managed-settings.json`
 - [ ] Managed policy org CLAUDE.md contains your org's content
-- [ ] Managed policy `managed-settings.json` contains your org's MCP servers, marketplaces, and plugins (if configured)
-- [ ] Plugin is registered: `cat ~/.claude/plugins/installed_plugins.json` lists `claude-hub`
-- [ ] Plugin files exist: `ls ~/.claude/plugins/local/claude-hub/hooks/hooks.json`
+- [ ] Managed policy `managed-settings.json` contains your org's MCP servers (if configured)
+- [ ] `~/.claude/settings.json` has a `SessionStart` hook pointing to `sync.sh`
+- [ ] Sync script exists: `ls ~/.claude/plugins/local/claude-hub/scripts/sync.sh`
 - [ ] `cat ~/.claude/claude-hub/team` shows the expected team
 - [ ] Start a new Claude Code session (or run `sync.sh` manually)
 - [ ] User-level `~/.claude/CLAUDE.md` has team content but not org content (org is in managed policy)
