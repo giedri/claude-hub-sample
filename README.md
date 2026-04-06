@@ -1,10 +1,28 @@
 # claude-hub
 
-Pre-packaged Claude Code guidance for teams and organizations.
+Centralized Claude Code configuration for teams and organizations.
 
-Claude Hub distributes org and team CLAUDE.md files, skills, and fragments (project-level guidance) to every developer from a central Git repository. Developers get a working baseline the moment they open Claude Code: org standards, team conventions, reusable skills, and project-type-specific context are all in place without anyone installing or configuring anything by hand.
+Claude Code reads [CLAUDE.md](https://code.claude.com/docs/en/memory) files to know how to behave: what standards to follow, what tools to use, what patterns to prefer. Without something distributing these files, each developer sets up Claude Code on their own. Some follow your security policies. Some don't know they exist.
 
-This is not a replacement for Claude Code's built-in [plugin marketplace](https://code.claude.com/docs/en/plugins) or auto-update features. It complements them by solving a different problem: getting organization-specific guidance (coding standards, security policies, team conventions, project scaffolding) onto every machine automatically. The marketplace distributes community and third-party plugins; Claude Hub distributes your org's knowledge. If needed, the same mechanism can be extended to host a custom internal marketplace (plugins are just another item in the sync configuration).
+Claude Hub syncs organizational configuration from a single Git repo to every developer's machine. One repo controls:
+
+- Org standards and team conventions, written as CLAUDE.md files Claude follows in every session
+- MCP server connections, plugin marketplaces, and auto-enabled plugins
+- Per-team configuration: different teams get different guidance, skills, and tools, layered on a shared org baseline
+- Project scaffolding: Backstage (or similar) templates ship a `.claude/` directory with toolchain guidance, pre-approved permissions, and project-type skills, with drift detection when the central template changes
+- Enforcement boundaries: org-level policies go to MDM-managed system paths users can't override; team-level settings remain user-modifiable
+
+Developers open Claude Code and the configuration is already in place. Nothing to install or remember.
+
+### Why not just a marketplace plugin?
+
+Claude Code's [plugin marketplace](https://code.claude.com/docs/en/plugins) distributes reusable tools and workflows. Plugins run inside the boundaries Claude Code gives them. They can't change those boundaries, and that's where Claude Hub operates.
+
+A plugin can add skills and hooks. It can't write CLAUDE.md files, which are the primary way to tell Claude how to behave. It can't push MCP server configs, marketplace registrations, or `enabledPlugins` into developer settings. It can't deploy anything to the managed policy path where MDM puts files users can't remove. And it serves the same content to everyone; there's no way to give the frontend team different guidance than the platform team.
+
+Claude Hub handles all of that. It also handles cleanup: when you remove an MCP server or marketplace from the hub repo, the sync script removes it from every developer's settings on the next session. And for project scaffolding, the fragment system ships `.claude/` directories with new repos and detects when the central template drifts.
+
+Claude Hub can also distribute marketplace plugins. You can register internal marketplaces, auto-enable specific plugins, and restrict which marketplaces developers are allowed to add.
 
 **[Admin Guide](docs/admin-guide.md):** Setup, deployment, and configuration for platform engineers.
 **[User Guide](docs/user-guide.md):** Developer onboarding and daily usage.
@@ -22,17 +40,17 @@ claude-hub/
 
 ## What gets distributed
 
-Claude Hub delivers three kinds of guidance, each targeting a different level of the [CLAUDE.md hierarchy](https://code.claude.com/docs/en/memory):
+Each item targets a different level of the [CLAUDE.md hierarchy](https://code.claude.com/docs/en/memory):
 
-| What | Purpose | Example |
+| What | Scope | Example |
 |---|---|---|
-| **Org and team CLAUDE.md** | Instructions Claude Code follows automatically | Coding standards, security policies, team conventions |
-| **Skills** | Reusable slash-command workflows developers invoke on demand | `/hub-code-standards`, `/hub-security-review`, `/hub-deploy` |
-| **Fragments** | Project-level `.claude/` configurations shipped via scaffolding | Pre-approved permissions, project-type skills, toolchain reference |
-| **Plugin marketplaces** | Pre-registered private marketplaces and auto-enabled plugins | Org's internal plugin catalog, approved third-party plugins |
-| **MCP servers** | Connections to external tools distributed centrally | Jira, internal knowledge base, artifact registry |
+| **CLAUDE.md** | Instructions Claude follows in every session | Coding standards, security policies, review expectations |
+| **Skills** | Slash-command workflows developers invoke on demand | `/hub-infra-review`, `/hub-security-review`, `/hub-deploy` |
+| **MCP servers** | Tool connections distributed centrally | Jira, internal knowledge base, artifact registry |
+| **Plugin marketplaces** | Private marketplace registrations and auto-enabled plugins | Internal plugin catalog, approved third-party plugins |
+| **Fragments** | Project-level `.claude/` configs shipped via scaffolding | Pre-approved permissions, project-type skills, toolchain reference |
 
-Fragments are what make this more than a config sync tool. When a developer creates a new project from a Backstage (or similar) template, the project arrives with a complete `.claude/` directory: a project CLAUDE.md with toolchain-specific guidance, pre-approved permissions, and project-type skills, ready to use from the first session.
+Fragments extend this beyond runtime configuration. When a developer creates a new project from a Backstage (or similar) template, the project arrives with a complete `.claude/` directory: a project CLAUDE.md with toolchain-specific guidance, pre-approved permissions, and project-type skills, ready to use from the first session.
 
 ## How it works
 
