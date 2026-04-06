@@ -335,9 +335,11 @@ sync_mcp_servers() {
         team_settings="$REPO_DIR/teams/$TEAM/settings.json"
     fi
 
-    # Check if there are any MCP server configs to sync
+    # Check if there are any settings configs to sync
+    # In MDM mode, org mcpServers are in managed-settings.json, but
+    # enabledPlugins and extraKnownMarketplaces still need user settings.json
     local has_org=0 has_team=0
-    if [ "$mdm_mode" -eq 0 ] && [ -f "$org_settings" ]; then
+    if [ -f "$org_settings" ]; then
         has_org=1
     fi
     if [ -n "$team_settings" ] && [ -f "$team_settings" ]; then
@@ -401,12 +403,14 @@ def merge_dict_key(settings, key, hub_entries, prev_managed):
         del settings[key]
     return set(hub_entries.keys())
 
-org = load_json(org_path) if not mdm_mode else {}
+org = load_json(org_path)
 team = load_json(team_path)
 
 # Collect hub-managed entries (org + team, team wins on conflict)
+# In MDM mode, org mcpServers are in managed-settings.json — skip them here
 hub_servers = {}
-hub_servers.update(org.get("mcpServers", {}))
+if not mdm_mode:
+    hub_servers.update(org.get("mcpServers", {}))
 hub_servers.update(team.get("mcpServers", {}))
 
 hub_marketplaces = {}
