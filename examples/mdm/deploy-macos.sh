@@ -35,6 +35,7 @@ die() {
 }
 
 # --- Resolve parameters ---
+echo $CLAUDE_HUB_TEAM
 TEAM="${4:-${CLAUDE_HUB_TEAM:-}}"
 REPO_URL="${5:-${CLAUDE_HUB_REPO_URL:-}}"
 
