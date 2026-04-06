@@ -69,11 +69,9 @@ run_as_user() {
 CLAUDE_DIR="$USER_HOME/.claude"
 HUB_DIR="$CLAUDE_DIR/claude-hub"
 PLUGIN_DEST="$CLAUDE_DIR/plugins/local/claude-hub"
-INSTALLED_JSON="$CLAUDE_DIR/plugins/installed_plugins.json"
 
 mkdir -p "$HUB_DIR"
 mkdir -p "$PLUGIN_DEST"
-mkdir -p "$(dirname "$INSTALLED_JSON")"
 
 # --- Write config files ---
 echo -n "$TEAM" > "$HUB_DIR/team"
@@ -131,53 +129,7 @@ else
     die "Plugin source directory not found at $PLUGIN_SRC"
 fi
 
-# --- Patch installed_plugins.json ---
-PLUGIN_ENTRY="$PLUGIN_DEST/.claude-plugin"
-if [ -f "$INSTALLED_JSON" ]; then
-    if python3 -c "
-import json, sys
-with open('$INSTALLED_JSON') as f:
-    data = json.load(f)
-plugins = data if isinstance(data, list) else data.get('plugins', {})
-if isinstance(plugins, dict):
-    sys.exit(0 if 'claude-hub@local' in plugins else 1)
-for p in plugins:
-    if p.get('path') == '$PLUGIN_ENTRY' or p.get('name') == 'claude-hub':
-        sys.exit(0)
-sys.exit(1)
-" 2>/dev/null; then
-        log "Plugin already registered in installed_plugins.json"
-    else
-        log "Adding plugin entry to existing installed_plugins.json"
-        python3 -c "
-import json
-path = '$INSTALLED_JSON'
-with open(path) as f:
-    data = json.load(f)
-if isinstance(data, list):
-    data.append({'name': 'claude-hub', 'path': '$PLUGIN_ENTRY'})
-else:
-    plugins = data.get('plugins', {})
-    if isinstance(plugins, dict):
-        plugins['claude-hub@local'] = [{'scope': 'user', 'installPath': '$PLUGIN_DEST', 'version': 'local'}]
-    else:
-        plugins.append({'name': 'claude-hub', 'path': '$PLUGIN_ENTRY'})
-    data['plugins'] = plugins
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-"
-    fi
-else
-    log "Creating installed_plugins.json"
-    python3 -c "
-import json
-data = [{'name': 'claude-hub', 'path': '$PLUGIN_ENTRY'}]
-with open('$INSTALLED_JSON', 'w') as f:
-    json.dump(data, f, indent=2)
-"
-fi
-
-# --- Enable plugin and add SessionStart hook to settings.json ---
+# --- Add SessionStart hook to settings.json ---
 USER_SETTINGS="$CLAUDE_DIR/settings.json"
 if command -v python3 >/dev/null 2>&1; then
     python3 - "$USER_SETTINGS" "$PLUGIN_DEST" <<'PYEOF'
@@ -191,10 +143,6 @@ if os.path.isfile(settings_path):
         data = json.load(f)
 else:
     data = {}
-
-# Enable plugin
-plugins = data.setdefault("enabledPlugins", {})
-plugins["claude-hub@local"] = True
 
 # Add SessionStart hook if not already present
 hooks = data.setdefault("hooks", {})
@@ -222,7 +170,7 @@ with open(settings_path, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PYEOF
-    log "Enabled claude-hub plugin and SessionStart hook in $USER_SETTINGS"
+    log "Added SessionStart hook to $USER_SETTINGS"
 else
     log "Warning: python3 not found, could not configure settings.json"
 fi

@@ -1,11 +1,11 @@
 #!/bin/bash
 # uninstall-macos.sh — Jamf Pro / macOS MDM uninstall for claude-hub
 # Reverses everything done by deploy-macos.sh:
-#   1. Removes hub-managed entries from ~/.claude/settings.json (MCP servers, marketplaces, plugins)
+#   1. Removes hub-managed entries from ~/.claude/settings.json (MCP servers, marketplaces)
 #   2. Removes hub-* skills from ~/.claude/skills/
 #   3. Removes the hub-generated ~/.claude/CLAUDE.md
 #   4. Removes the plugin from ~/.claude/plugins/local/claude-hub/
-#   5. Removes the plugin registration from installed_plugins.json
+#   5. Removes the SessionStart hook from ~/.claude/settings.json
 #   6. Removes the claude-hub data directory (~/.claude/claude-hub/)
 #   7. Removes the managed policy files from /Library/Application Support/ClaudeCode/
 #
@@ -47,7 +47,6 @@ CLAUDE_DIR="$USER_HOME/.claude"
 HUB_DIR="$CLAUDE_DIR/claude-hub"
 SKILLS_DIR="$CLAUDE_DIR/skills"
 PLUGIN_DEST="$CLAUDE_DIR/plugins/local/claude-hub"
-INSTALLED_JSON="$CLAUDE_DIR/plugins/installed_plugins.json"
 USER_SETTINGS="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 MANAGED_POLICY_DIR="/Library/Application Support/ClaudeCode"
@@ -132,7 +131,7 @@ else
     log "No plugin directory found at $PLUGIN_DEST, skipping"
 fi
 
-# --- 5. Disable plugin and remove SessionStart hook from settings.json ---
+# --- 5. Remove SessionStart hook from settings.json ---
 if [ -f "$USER_SETTINGS" ] && command -v python3 >/dev/null 2>&1; then
     python3 - "$USER_SETTINGS" <<'PYEOF'
 import json, sys, os
@@ -148,7 +147,7 @@ except (json.JSONDecodeError, IOError):
 
 changed = False
 
-# Remove enabledPlugins entry
+# Remove enabledPlugins entry (from older deploys)
 plugins = data.get("enabledPlugins", {})
 if "claude-hub@local" in plugins:
     del plugins["claude-hub@local"]
@@ -160,12 +159,12 @@ hooks = data.get("hooks", {})
 session_hooks = hooks.get("SessionStart", [])
 filtered = []
 for entry in session_hooks:
-    dominated = False
+    keep = True
     for h in entry.get("hooks", []):
         if "sync.sh" in h.get("command", ""):
-            dominated = True
+            keep = False
             break
-    if not dominated:
+    if keep:
         filtered.append(entry)
 if len(filtered) != len(session_hooks):
     if filtered:
@@ -180,51 +179,7 @@ if changed:
         json.dump(data, f, indent=2)
         f.write("\n")
 PYEOF
-    log "Removed claude-hub plugin and SessionStart hook from settings.json"
-fi
-
-# --- 6. Remove plugin from installed_plugins.json ---
-if [ -f "$INSTALLED_JSON" ] && command -v python3 >/dev/null 2>&1; then
-    python3 - "$INSTALLED_JSON" <<'PYEOF'
-import json, sys, os
-
-path = sys.argv[1]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except (json.JSONDecodeError, IOError):
-    sys.exit(0)
-
-changed = False
-
-if isinstance(data, list):
-    # v1 format: list of plugin entries
-    before = len(data)
-    data = [p for p in data if p.get('name') != 'claude-hub' and 'claude-hub' not in p.get('path', '')]
-    changed = len(data) != before
-elif isinstance(data, dict):
-    plugins = data.get('plugins', {})
-    if isinstance(plugins, dict):
-        # v2 format: dict keyed by plugin@marketplace
-        keys_to_remove = [k for k in plugins if k.startswith('claude-hub')]
-        for k in keys_to_remove:
-            del plugins[k]
-            changed = True
-        data['plugins'] = plugins
-    elif isinstance(plugins, list):
-        before = len(plugins)
-        plugins = [p for p in plugins if p.get('name') != 'claude-hub' and 'claude-hub' not in p.get('path', '')]
-        changed = len(plugins) != before
-        data['plugins'] = plugins
-
-if changed:
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-PYEOF
-    log "Removed claude-hub from installed_plugins.json"
-else
-    log "Skipping installed_plugins.json cleanup (file missing or no python3)"
+    log "Removed SessionStart hook from settings.json"
 fi
 
 # --- 6. Remove claude-hub data directory ---

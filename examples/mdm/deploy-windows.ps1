@@ -70,11 +70,9 @@ Write-Log "Deploying claude-hub for home=$UserHome team=$Team"
 $ClaudeDir = Join-Path $UserHome ".claude"
 $HubDir = Join-Path $ClaudeDir "claude-hub"
 $PluginDest = Join-Path $ClaudeDir "plugins\local\claude-hub"
-$InstalledJson = Join-Path $ClaudeDir "plugins\installed_plugins.json"
 
 New-Item -ItemType Directory -Path $HubDir -Force | Out-Null
 New-Item -ItemType Directory -Path $PluginDest -Force | Out-Null
-New-Item -ItemType Directory -Path (Split-Path $InstalledJson) -Force | Out-Null
 
 # --- Write config files ---
 Set-Content -Path (Join-Path $HubDir "team") -Value $Team -NoNewline
@@ -140,69 +138,7 @@ if (Test-Path $PluginSrc) {
     exit 1
 }
 
-# --- Patch installed_plugins.json ---
-$PluginEntry = Join-Path $PluginDest ".claude-plugin"
-$pluginObj = @{ name = "claude-hub"; path = $PluginEntry }
-
-if (Test-Path $InstalledJson) {
-    $rawJson = Get-Content -Path $InstalledJson -Raw
-    $data = $rawJson | ConvertFrom-Json
-
-    # Handle both v1 (array) and v2 (dict with plugins key) formats
-    $alreadyRegistered = $false
-
-    if ($data -is [System.Array]) {
-        # v1 format: flat array
-        foreach ($p in $data) {
-            if ($p.path -eq $PluginEntry -or $p.name -eq "claude-hub") {
-                $alreadyRegistered = $true
-                break
-            }
-        }
-        if (-not $alreadyRegistered) {
-            Write-Log "Adding plugin entry to existing installed_plugins.json"
-            $plugins = [System.Collections.ArrayList]@($data)
-            $plugins.Add($pluginObj) | Out-Null
-            $plugins.ToArray() | ConvertTo-Json -Depth 10 | Set-Content -Path $InstalledJson
-        }
-    } elseif ($data.plugins -is [System.Collections.IDictionary] -or ($data.plugins -and $data.plugins.PSObject.Properties)) {
-        # v2 format: plugins is a dict keyed by plugin@marketplace
-        if ($data.plugins.PSObject.Properties["claude-hub@local"]) {
-            $alreadyRegistered = $true
-        }
-        if (-not $alreadyRegistered) {
-            Write-Log "Adding plugin entry to existing installed_plugins.json"
-            $data.plugins | Add-Member -NotePropertyName "claude-hub@local" -NotePropertyValue @(
-                @{ scope = "user"; installPath = $PluginDest; version = "local" }
-            ) -Force
-            $data | ConvertTo-Json -Depth 10 | Set-Content -Path $InstalledJson
-        }
-    } else {
-        # v1 format: plugins is an array inside object
-        $plugins = if ($data.plugins) { [System.Collections.ArrayList]@($data.plugins) } else { [System.Collections.ArrayList]::new() }
-        foreach ($p in $plugins) {
-            if ($p.path -eq $PluginEntry -or $p.name -eq "claude-hub") {
-                $alreadyRegistered = $true
-                break
-            }
-        }
-        if (-not $alreadyRegistered) {
-            Write-Log "Adding plugin entry to existing installed_plugins.json"
-            $plugins.Add($pluginObj) | Out-Null
-            $data.plugins = $plugins.ToArray()
-            $data | ConvertTo-Json -Depth 10 | Set-Content -Path $InstalledJson
-        }
-    }
-
-    if ($alreadyRegistered) {
-        Write-Log "Plugin already registered in installed_plugins.json"
-    }
-} else {
-    Write-Log "Creating installed_plugins.json"
-    @($pluginObj) | ConvertTo-Json -Depth 10 | Set-Content -Path $InstalledJson
-}
-
-# --- Enable plugin and add SessionStart hook to settings.json ---
+# --- Add SessionStart hook to settings.json ---
 $UserSettings = Join-Path $ClaudeDir "settings.json"
 $SyncCommand = "bash $($PluginDest -replace '\\','/')/scripts/sync.sh"
 
@@ -211,12 +147,6 @@ if (Test-Path $UserSettings) {
 } else {
     $settingsData = [PSCustomObject]@{}
 }
-
-# Enable plugin
-if (-not $settingsData.PSObject.Properties["enabledPlugins"]) {
-    $settingsData | Add-Member -NotePropertyName "enabledPlugins" -NotePropertyValue ([PSCustomObject]@{})
-}
-$settingsData.enabledPlugins | Add-Member -NotePropertyName "claude-hub@local" -NotePropertyValue $true -Force
 
 # Add SessionStart hook if not already present
 if (-not $settingsData.PSObject.Properties["hooks"]) {
@@ -253,7 +183,7 @@ if (-not $hookExists) {
     }
 }
 $settingsData | ConvertTo-Json -Depth 10 | Set-Content -Path $UserSettings
-Write-Log "Enabled claude-hub plugin and SessionStart hook in $UserSettings"
+Write-Log "Added SessionStart hook to $UserSettings"
 
 # --- Run initial sync ---
 $SyncScript = Join-Path $PluginDest "scripts\sync.sh"
