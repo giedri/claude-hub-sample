@@ -2,8 +2,10 @@
   "mcpServers": {},
   "extraKnownMarketplaces": {
     "agent-plugins-for-aws": {
-      "source": "github",
-      "repo": "giedri/agent-plugins"
+      "source": {
+        "source": "github",
+        "repo": "giedri/agent-plugins"
+      }
     }
   },
   "enabledPlugins": {
